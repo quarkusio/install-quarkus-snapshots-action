@@ -35,6 +35,9 @@ steps:
 | `branch` | The Quarkus branch to install snapshots for | Yes | `main` |
 | `repository` | The repository containing the Maven snapshot releases | Yes | `quarkusio/quarkus-ecosystem-ci` |
 
+> [!WARNING]
+> The build will fail if the requested branch does not exist in the target repository or if no snapshot release has been published for it within the last 36 hours.
+
 ## Permissions
 
 This action requires the following permissions on the calling workflow:
