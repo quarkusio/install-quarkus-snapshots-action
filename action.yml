@@ -11,6 +11,9 @@ inputs:
     required: true
     default: quarkusio/quarkus-ecosystem-ci
 
+permissions:
+  contents: read
+
 runs:
   using: composite
   steps:

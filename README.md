@@ -35,6 +35,27 @@ steps:
 | `branch` | The Quarkus branch to install snapshots for | Yes | `main` |
 | `repository` | The repository containing the Maven snapshot releases | Yes | `quarkusio/quarkus-ecosystem-ci` |
 
+## Permissions
+
+This action requires the following permissions on the calling workflow:
+
+| Permission | Access | Reason |
+|---|---|---|
+| `contents` | `read` | Required to list, view, and download releases via the `gh` CLI |
+
+Example workflow with explicit permissions:
+
+```yaml
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: quarkusio/install-quarkus-snapshots-action@main
+```
+
 ## Requirements
 
 - The `gh` CLI must be available in the runner (included by default in GitHub-hosted runners).
