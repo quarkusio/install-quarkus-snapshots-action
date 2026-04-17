@@ -11,6 +11,14 @@ inputs:
     required: true
     default: quarkusio/quarkus-ecosystem-ci
 
+outputs:
+  quarkus-version:
+    description: The Quarkus version that was installed
+    value: ${{ steps.install.outputs.quarkus-version }}
+  quarkus-sha:
+    description: The Quarkus commit SHA from the snapshot release tag
+    value: ${{ steps.install.outputs.quarkus-sha }}
+
 permissions:
   contents: read
 
@@ -18,23 +26,30 @@ runs:
   using: composite
   steps:
     - name: Install Quarkus Snapshots
+      id: install
       shell: bash
       run: |
-        BRANCH="${{ inputs.branch }}"
-        REPO="${{ inputs.repository }}"
-        PREFIX="maven-repo-${BRANCH}-"
+        set -e
 
-        echo "Looking for latest Quarkus snapshot release for branch: ${BRANCH}"
+        QUARKUS_SNAPSHOT_BRANCH="${{ inputs.branch }}"
+        QUARKUS_SNAPSHOT_REPO="${{ inputs.repository }}"
+        PREFIX="maven-repo-${QUARKUS_SNAPSHOT_BRANCH}-"
 
-        # Find the latest release matching this branch
+        report_failure() {
+          echo "::error::Failed to install Quarkus snapshot"
+          exit 1
+        }
+
+        echo "Looking for latest Quarkus snapshot release for branch: ${QUARKUS_SNAPSHOT_BRANCH}"
+
         RELEASE_INFO=$(gh release list --limit 20 \
-          --repo "${REPO}" \
+          --repo "${QUARKUS_SNAPSHOT_REPO}" \
           | grep "${PREFIX}" \
           | head -n 1)
 
         if [ -z "${RELEASE_INFO}" ]; then
-          echo "::error::No snapshot release found for branch '${BRANCH}'"
-          exit 1
+          echo "::error::No snapshot release found for branch '${QUARKUS_SNAPSHOT_BRANCH}'"
+          report_failure
         fi
 
         TAG=$(echo "${RELEASE_INFO}" | awk -F'\t' '{print $3}')
@@ -42,35 +57,32 @@ runs:
 
         echo "Found release: ${TAG} (published: ${PUBLISHED})"
 
-        # Check if the release is older than 36 hours
         RELEASE_EPOCH=$(date -d "${PUBLISHED}" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "${PUBLISHED}" +%s 2>/dev/null)
         NOW_EPOCH=$(date +%s)
         AGE_HOURS=$(( (NOW_EPOCH - RELEASE_EPOCH) / 3600 ))
 
         if [ "${AGE_HOURS}" -gt 36 ]; then
           echo "::error::Latest snapshot release '${TAG}' is ${AGE_HOURS} hours old (published: ${PUBLISHED}). Expected a release less than 36 hours old."
-          exit 1
+          report_failure
         fi
 
-        # Log release details
-        RELEASE_URL=$(gh release view "${TAG}" --repo "${REPO}" --json url --jq '.url')
-        RELEASE_NOTES=$(gh release view "${TAG}" --repo "${REPO}" --json body --jq '.body')
-        echo "Release URL: ${RELEASE_URL}"
-        echo "Release notes: ${RELEASE_NOTES}"
-        echo "Release age: ${AGE_HOURS} hours"
-
-        # Download and install into .m2
-        echo "Downloading maven-repo.tar.gz..."
-        gh release download "${TAG}" \
-          --repo "${REPO}" \
+        echo "Downloading Quarkus snapshot: ${TAG} (age: ${AGE_HOURS} hours)"
+        if ! gh release download "${TAG}" \
+          --repo "${QUARKUS_SNAPSHOT_REPO}" \
           --pattern "maven-repo.tar.gz" \
-          --dir /tmp
+          --dir /tmp; then
+          report_failure
+        fi
 
-        echo "Installing into ~/.m2/repository..."
+        QUARKUS_VERSION=$(tar -tzf /tmp/maven-repo.tar.gz | grep 'io/quarkus/quarkus-core/' | head -1 | sed 's|.*/quarkus-core/\([^/]*\)/.*|\1|')
+        QUARKUS_SHA="${TAG#${PREFIX}}"
+        echo "quarkus-version=${QUARKUS_VERSION}" >> "$GITHUB_OUTPUT"
+        echo "quarkus-sha=${QUARKUS_SHA}" >> "$GITHUB_OUTPUT"
+
         mkdir -p ~/.m2/repository
         tar -xzf /tmp/maven-repo.tar.gz -C ~/.m2/repository
-
-        echo "Quarkus snapshots for branch '${BRANCH}' installed successfully."
         rm -f /tmp/maven-repo.tar.gz
+
+        echo "Quarkus ${QUARKUS_VERSION} for branch '${QUARKUS_SNAPSHOT_BRANCH}' installed successfully."
       env:
         GH_TOKEN: ${{ github.token }}
