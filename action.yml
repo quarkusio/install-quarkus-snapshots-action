@@ -10,6 +10,10 @@ inputs:
     description: The repository containing the Maven snapshot releases
     required: true
     default: quarkusio/quarkus-ecosystem-ci
+  fail-on-missing:
+    description: Fail the build instead of building Quarkus from source when no snapshot is available
+    required: false
+    default: 'false'
 
 outputs:
   quarkus-version:
@@ -18,6 +22,9 @@ outputs:
   quarkus-sha:
     description: The Quarkus commit SHA from the snapshot release tag
     value: ${{ steps.install.outputs.quarkus-sha }}
+  built-from-source:
+    description: Whether Quarkus was built from source instead of using a snapshot
+    value: ${{ steps.install.outputs.built-from-source }}
 
 runs:
   using: composite
@@ -30,57 +37,74 @@ runs:
 
         QUARKUS_SNAPSHOT_BRANCH="${{ inputs.branch }}"
         QUARKUS_SNAPSHOT_REPO="${{ inputs.repository }}"
+        FAIL_ON_MISSING="${{ inputs.fail-on-missing }}"
         PREFIX="maven-repo-${QUARKUS_SNAPSHOT_BRANCH}-"
-
-        report_failure() {
-          echo "::error::Failed to install Quarkus snapshot"
-          exit 1
-        }
 
         echo "Looking for latest Quarkus snapshot release for branch: ${QUARKUS_SNAPSHOT_BRANCH}"
 
         RELEASE_INFO=$(gh release list --limit 20 \
           --repo "${QUARKUS_SNAPSHOT_REPO}" \
           | grep "${PREFIX}" \
-          | head -n 1)
+          | head -n 1) || true
+
+        SNAPSHOT_AVAILABLE=true
 
         if [ -z "${RELEASE_INFO}" ]; then
-          echo "::error::No snapshot release found for branch '${QUARKUS_SNAPSHOT_BRANCH}'"
-          report_failure
+          echo "::warning::No snapshot release found for branch '${QUARKUS_SNAPSHOT_BRANCH}'"
+          SNAPSHOT_AVAILABLE=false
         fi
 
-        TAG=$(echo "${RELEASE_INFO}" | awk -F'\t' '{print $3}')
-        PUBLISHED=$(echo "${RELEASE_INFO}" | awk -F'\t' '{print $4}')
-
-        echo "Found release: ${TAG} (published: ${PUBLISHED})"
-
-        RELEASE_EPOCH=$(date -d "${PUBLISHED}" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "${PUBLISHED}" +%s 2>/dev/null)
-        NOW_EPOCH=$(date +%s)
-        AGE_HOURS=$(( (NOW_EPOCH - RELEASE_EPOCH) / 3600 ))
-
-        if [ "${AGE_HOURS}" -gt 36 ]; then
-          echo "::error::Latest snapshot release '${TAG}' is ${AGE_HOURS} hours old (published: ${PUBLISHED}). Expected a release less than 36 hours old."
-          report_failure
+        if [ "${SNAPSHOT_AVAILABLE}" = "true" ]; then
+          TAG=$(echo "${RELEASE_INFO}" | awk -F'\t' '{print $3}')
+          echo "Found release: ${TAG}"
+          echo "Downloading Quarkus snapshot: ${TAG}"
+          if ! gh release download "${TAG}" \
+            --repo "${QUARKUS_SNAPSHOT_REPO}" \
+            --pattern "maven-repo.tar.gz" \
+            --dir /tmp; then
+            echo "::warning::Failed to download snapshot release '${TAG}'"
+            SNAPSHOT_AVAILABLE=false
+          fi
         fi
 
-        echo "Downloading Quarkus snapshot: ${TAG} (age: ${AGE_HOURS} hours)"
-        if ! gh release download "${TAG}" \
-          --repo "${QUARKUS_SNAPSHOT_REPO}" \
-          --pattern "maven-repo.tar.gz" \
-          --dir /tmp; then
-          report_failure
+        if [ "${SNAPSHOT_AVAILABLE}" = "true" ]; then
+          QUARKUS_VERSION=$(tar -tzf /tmp/maven-repo.tar.gz | grep 'io/quarkus/quarkus-core/[^/]' | head -1 | sed 's|.*/quarkus-core/\([^/]*\)/.*|\1|')
+          QUARKUS_SHA="${TAG#${PREFIX}}"
+          echo "quarkus-version=${QUARKUS_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "quarkus-sha=${QUARKUS_SHA}" >> "$GITHUB_OUTPUT"
+
+          mkdir -p ~/.m2/repository
+          tar -tzf /tmp/maven-repo.tar.gz >> ~/.m2/.quarkus-snapshots-manifest
+          tar -xzf /tmp/maven-repo.tar.gz -C ~/.m2/repository
+          rm -f /tmp/maven-repo.tar.gz
+
+          echo "built-from-source=false" >> "$GITHUB_OUTPUT"
+          echo "Quarkus ${QUARKUS_VERSION} for branch '${QUARKUS_SNAPSHOT_BRANCH}' installed successfully."
+        else
+          if [ "${FAIL_ON_MISSING}" = "true" ]; then
+            echo "::error::No usable Quarkus snapshot available and fail-on-missing is enabled"
+            exit 1
+          fi
+
+          echo "No usable snapshot available. Building Quarkus from source for branch '${QUARKUS_SNAPSHOT_BRANCH}'..."
+          QUARKUS_SRC=$(mktemp -d)
+          git clone --depth 1 --branch "${QUARKUS_SNAPSHOT_BRANCH}" \
+            "https://github.com/quarkusio/quarkus.git" "${QUARKUS_SRC}"
+
+          QUARKUS_SHA=$(git -C "${QUARKUS_SRC}" rev-parse HEAD)
+          QUARKUS_VERSION=$(mvn -f "${QUARKUS_SRC}/pom.xml" help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "quarkus-version=${QUARKUS_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "quarkus-sha=${QUARKUS_SHA}" >> "$GITHUB_OUTPUT"
+
+          echo "Building Quarkus ${QUARKUS_VERSION} (${QUARKUS_SHA})..."
+          "${QUARKUS_SRC}/mvnw" -f "${QUARKUS_SRC}/pom.xml" -T0.8C -ntp -e \
+            -Prelocations -DskipTests -DskipITs -Dinvoker.skip \
+            -Dno-test-modules -DskipExtensionValidation -Dskip.gradle.tests \
+            -Dtruststore.skip install
+
+          rm -rf "${QUARKUS_SRC}"
+          echo "built-from-source=true" >> "$GITHUB_OUTPUT"
+          echo "Quarkus ${QUARKUS_VERSION} for branch '${QUARKUS_SNAPSHOT_BRANCH}' built and installed successfully."
         fi
-
-        QUARKUS_VERSION=$(tar -tzf /tmp/maven-repo.tar.gz | grep 'io/quarkus/quarkus-core/[^/]' | head -1 | sed 's|.*/quarkus-core/\([^/]*\)/.*|\1|')
-        QUARKUS_SHA="${TAG#${PREFIX}}"
-        echo "quarkus-version=${QUARKUS_VERSION}" >> "$GITHUB_OUTPUT"
-        echo "quarkus-sha=${QUARKUS_SHA}" >> "$GITHUB_OUTPUT"
-
-        mkdir -p ~/.m2/repository
-        tar -tzf /tmp/maven-repo.tar.gz >> ~/.m2/.quarkus-snapshots-manifest
-        tar -xzf /tmp/maven-repo.tar.gz -C ~/.m2/repository
-        rm -f /tmp/maven-repo.tar.gz
-
-        echo "Quarkus ${QUARKUS_VERSION} for branch '${QUARKUS_SNAPSHOT_BRANCH}' installed successfully."
       env:
         GH_TOKEN: ${{ github.token }}

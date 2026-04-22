@@ -7,9 +7,10 @@ A GitHub Action that downloads and installs Quarkus Maven snapshot artifacts fro
 This action:
 
 1. Searches for the latest snapshot release matching the specified branch in the configured repository.
-2. Validates that the release is not older than 36 hours (to ensure freshness).
-3. Downloads the `maven-repo.tar.gz` artifact from the release.
-4. Extracts it into `~/.m2/repository`.
+2. Downloads the `maven-repo.tar.gz` artifact from the release.
+3. Extracts it into `~/.m2/repository`.
+
+If no usable snapshot is available, the action automatically falls back to cloning and building Quarkus from source for the requested branch. Set `fail-on-missing: true` to fail the build instead.
 
 ## Usage
 
@@ -28,15 +29,30 @@ steps:
       repository: quarkusio/quarkus-ecosystem-ci
 ```
 
+### Fail instead of building from source
+
+```yaml
+steps:
+  - uses: quarkusio/install-quarkus-snapshots-action@main
+    with:
+      fail-on-missing: true
+```
+
 ## Inputs
 
 | Input | Description | Required | Default |
 |---|---|---|---|
 | `branch` | The Quarkus branch to install snapshots for | Yes | `main` |
 | `repository` | The repository containing the Maven snapshot releases | Yes | `quarkusio/quarkus-ecosystem-ci` |
+| `fail-on-missing` | Fail the build instead of building Quarkus from source when no snapshot is available | No | `false` |
 
-> [!WARNING]
-> The build will fail if the requested branch does not exist in the target repository or if no snapshot release has been published for it within the last 36 hours.
+## Outputs
+
+| Output | Description |
+|---|---|
+| `quarkus-version` | The Quarkus version that was installed |
+| `quarkus-sha` | The Quarkus commit SHA |
+| `built-from-source` | `true` if Quarkus was built from source, `false` if installed from a snapshot |
 
 ## Permissions
 
@@ -71,10 +87,14 @@ steps:
     if: always()
 ```
 
+> [!NOTE]
+> The cleanup action only removes artifacts installed from snapshot releases. Artifacts built from source are installed via Maven and are not tracked for cleanup.
+
 ## Requirements
 
 - The `gh` CLI must be available in the runner (included by default in GitHub-hosted runners).
 - The `GITHUB_TOKEN` must have read access to the releases in the target repository. The action uses `github.token` automatically.
+- When building from source, `mvn` and a JDK must be available on the runner.
 
 ## License
 
