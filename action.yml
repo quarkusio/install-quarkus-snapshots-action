@@ -19,9 +19,6 @@ outputs:
     description: The Quarkus commit SHA from the snapshot release tag
     value: ${{ steps.install.outputs.quarkus-sha }}
 
-permissions:
-  contents: read
-
 runs:
   using: composite
   steps:
