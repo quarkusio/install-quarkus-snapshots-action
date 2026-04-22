@@ -75,6 +75,16 @@ jobs:
       - uses: quarkusio/install-quarkus-snapshots-action@main
 ```
 
+## Maven builds
+
+Maven builds that depend on the installed snapshots should use the `-nsu` (`--no-snapshot-updates`) flag to prevent Maven from trying to download SNAPSHOT artifacts from remote repositories (e.g. Sonatype), which would override the locally installed snapshots:
+
+```yaml
+steps:
+  - uses: quarkusio/install-quarkus-snapshots-action@main
+  - run: mvn verify -nsu
+```
+
 ## Cleanup
 
 To remove the snapshot artifacts after your build, use the cleanup action with `if: always()` to ensure it runs even if the build fails:
