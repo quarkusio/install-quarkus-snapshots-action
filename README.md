@@ -59,6 +59,18 @@ jobs:
       - uses: quarkusio/install-quarkus-snapshots-action@main
 ```
 
+## Cleanup
+
+To remove the snapshot artifacts after your build, use the cleanup action with `if: always()` to ensure it runs even if the build fails:
+
+```yaml
+steps:
+  - uses: quarkusio/install-quarkus-snapshots-action@main
+  - run: mvn verify
+  - uses: quarkusio/install-quarkus-snapshots-action/cleanup@main
+    if: always()
+```
+
 ## Requirements
 
 - The `gh` CLI must be available in the runner (included by default in GitHub-hosted runners).

@@ -1,0 +1,30 @@
+name: Cleanup Quarkus Snapshots
+description: Remove Quarkus snapshot artifacts previously installed by install-quarkus-snapshots-action
+
+runs:
+  using: composite
+  steps:
+    - name: Cleanup Quarkus Snapshots
+      shell: bash
+      run: |
+        set -e
+
+        MANIFEST="${HOME}/.m2/.quarkus-snapshots-manifest"
+
+        if [ ! -f "${MANIFEST}" ]; then
+          echo "No snapshot manifest found — nothing to clean up."
+          exit 0
+        fi
+
+        echo "Removing Quarkus snapshot artifacts..."
+        while IFS= read -r file; do
+          if [ -f "${HOME}/.m2/repository/${file}" ]; then
+            rm -f "${HOME}/.m2/repository/${file}"
+          fi
+        done < "${MANIFEST}"
+
+        # Remove empty directories left behind
+        find "${HOME}/.m2/repository" -type d -empty -delete 2>/dev/null || true
+
+        rm -f "${MANIFEST}"
+        echo "Quarkus snapshot artifacts cleaned up successfully."
