@@ -92,7 +92,7 @@ To remove the snapshot artifacts after your build, use the cleanup action with `
 ```yaml
 steps:
   - uses: quarkusio/install-quarkus-snapshots-action@main
-  - run: mvn verify
+  - run: mvn verify -nsu
   - uses: quarkusio/install-quarkus-snapshots-action/cleanup@main
     if: always()
 ```
