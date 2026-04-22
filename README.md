@@ -87,9 +87,6 @@ steps:
     if: always()
 ```
 
-> [!NOTE]
-> The cleanup action only removes artifacts installed from snapshot releases. Artifacts built from source are installed via Maven and are not tracked for cleanup.
-
 ## Requirements
 
 - The `gh` CLI must be available in the runner (included by default in GitHub-hosted runners).

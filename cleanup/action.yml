@@ -12,7 +12,8 @@ runs:
         MANIFEST="${HOME}/.m2/.quarkus-snapshots-manifest"
 
         if [ ! -f "${MANIFEST}" ]; then
-          echo "No snapshot manifest found — nothing to clean up."
+          echo "No snapshot manifest found — removing ${HOME}/.m2/repository/io/quarkus directly."
+          rm -rf "${HOME}/.m2/repository/io/quarkus"
           exit 0
         fi
 
