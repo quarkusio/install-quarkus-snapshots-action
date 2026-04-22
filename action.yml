@@ -80,7 +80,7 @@ runs:
         echo "quarkus-sha=${QUARKUS_SHA}" >> "$GITHUB_OUTPUT"
 
         mkdir -p ~/.m2/repository
-        tar -tzf /tmp/maven-repo.tar.gz > ~/.m2/.quarkus-snapshots-manifest
+        tar -tzf /tmp/maven-repo.tar.gz >> ~/.m2/.quarkus-snapshots-manifest
         tar -xzf /tmp/maven-repo.tar.gz -C ~/.m2/repository
         rm -f /tmp/maven-repo.tar.gz
 
